@@ -9,6 +9,7 @@ import json
 from openpilot.cereal import custom, messaging
 from opendbc.car.structs import car
 from opendbc.car.hyundai.values import CAR as HYUNDAI_CAR, UNSUPPORTED_LONGITUDINAL_CAR
+from opendbc.sunnypilot.car.hyundai.torque import supports_low_speed_torque
 from opendbc.car.subaru.values import CAR as SUBARU_CAR, SubaruFlags
 from opendbc.car.toyota.values import CAR as TOYOTA_CAR, ToyotaFlags
 from opendbc.sunnypilot.car.interfaces import has_bsm
@@ -30,6 +31,7 @@ CAPABILITY_FIELDS = (
   "has_icbm",
   "icbm_available",
   "torque_allowed",
+  "hkg_low_speed_torque_available",
   "brand",
   "pcm_cruise",
   "alpha_long_available",
@@ -54,6 +56,7 @@ CAPABILITY_LABELS: dict[str, str] = {
   "has_icbm": "ICBM enabled",
   "icbm_available": "ICBM available",
   "torque_allowed": "torque steering (not available for angle steering vehicles)",
+  "hkg_low_speed_torque_available": "Compatible HKG CAN-FD torque steering (vehicle fingerprint required)",
   "brand": "Vehicle brand",
   "pcm_cruise": "PCM cruise",
   "alpha_long_available": "Alpha Longitudinal available",
@@ -218,6 +221,10 @@ def generate_capabilities(params: Params | None = None) -> dict:
     caps["has_bsm"] = has_bsm(CP, CP_SP)
 
   _resolve_brand_capabilities(caps, bundle_platform, CP)
+
+  # Only a fingerprinted CarParams can enable this safety-sensitive capability.
+  # Do not guess eligibility from a manually selected Sorento platform.
+  caps["hkg_low_speed_torque_available"] = supports_low_speed_torque(CP)
 
   return caps
 
