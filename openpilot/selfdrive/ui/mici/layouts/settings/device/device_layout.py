@@ -103,7 +103,7 @@ class PairBigButton(BigButton):
     self._comma_icon = gui_app.texture("icons_mici/settings/comma_icon.png", 33, 60)
     self._provider_icons = {provider: gui_app.texture(f"icons_mici/settings/device/paired_{provider}.png", 64, 64)
                            for provider in ("github", "google", "apple")}
-    super().__init__("pair to connect", "connect.comma.ai", self._comma_icon)
+    super().__init__("pair to connect", "skynet:3443", self._comma_icon)
 
   def _update_state(self):
     super()._update_state()
@@ -120,7 +120,7 @@ class PairBigButton(BigButton):
     else:
       self.set_icon(self._comma_icon)
       self.set_text("pair to connect")
-      self.set_value("connect.comma.ai")
+      self.set_value("skynet:3443")
 
   def _draw_subtitle(self, rect: rl.Rectangle):
     if self._show_commacare:

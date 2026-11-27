@@ -1,7 +1,7 @@
 import pyray as rl
 import time
 
-from openpilot.common.api import Api
+from openpilot.common.api import Api, CONNECT_URL
 from openpilot.common.qrcode import make_texture
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
@@ -34,7 +34,7 @@ class PairingDialog(Widget):
     except Exception:
       cloudlog.exception("Failed to get pairing token")
       token = ""
-    return f"https://connect.comma.ai/?pair={token}"
+    return f"{CONNECT_URL}/?pair={token}"
 
   def _generate_qr_code(self) -> None:
     try:
@@ -98,9 +98,9 @@ class PairingDialog(Widget):
 
   def _render_instructions(self, rect: rl.Rectangle) -> None:
     instructions = [
-      tr("Go to https://connect.comma.ai on your phone"),
+      tr("Go to https://skynet.tssnc.net:3443 on your phone"),
       tr("Click \"add new device\" and scan the QR code on the right"),
-      tr("Bookmark connect.comma.ai to your home screen to use it like an app"),
+      tr("Bookmark skynet.tssnc.net:3443 to your home screen to use it like an app"),
     ]
 
     font = gui_app.font(FontWeight.BOLD)

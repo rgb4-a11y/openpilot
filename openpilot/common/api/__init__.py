@@ -1,4 +1,4 @@
-from openpilot.common.api.comma_connect import API_HOST as API_HOST, CommaConnectApi
+from openpilot.common.api.comma_connect import API_HOST as API_HOST, CONNECT_URL as CONNECT_URL, CommaConnectApi
 
 
 class Api:

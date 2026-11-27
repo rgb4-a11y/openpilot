@@ -6,7 +6,7 @@ from typing import cast
 from pathlib import Path
 
 from datetime import datetime, timedelta, UTC
-from openpilot.common.api import api_get, get_key_pair
+from openpilot.common.api import API_HOST, api_get, get_key_pair
 from openpilot.common.params import Params
 from openpilot.common.spinner import Spinner
 from openpilot.selfdrive.selfdrived.alertmanager import set_offroad_alert
@@ -16,6 +16,11 @@ from openpilot.common.swaglog import cloudlog
 
 
 UNREGISTERED_DONGLE_ID = "UnregisteredDevice"
+
+# rbpilot: the self-hosted server assigns its own dongle ID, so remember which server the stored
+# DongleId belongs to and register again when API_HOST changes (or the last attempt failed).
+def _registered_host_file() -> Path:
+  return Path(Paths.persist_root() if PC else "/data") / "rbpilot_registered_host"
 
 def is_registered_device() -> bool:
   dongle = Params().get("DongleId")
@@ -35,10 +40,11 @@ def register(show_spinner=False) -> str | None:
   params = Params()
 
   dongle_id: str | None = params.get("DongleId")
-  if dongle_id is None and Path(Paths.persist_root()+"/comma/dongle_id").is_file():
-    # not all devices will have this; added early in comma 3X production (2/28/24)
-    with open(Paths.persist_root()+"/comma/dongle_id") as f:
-      dongle_id = f.read().strip()
+  host_file = _registered_host_file()
+  registered_host = host_file.read_text().strip() if host_file.is_file() else None
+  if registered_host != API_HOST:
+    # rbpilot: comma's dongle ID (params or /persist/comma/dongle_id) means nothing to the self-hosted server
+    dongle_id = None
 
   # Create registration token, in the future, this key will make JWTs directly
   jwt_algo, private_key, public_key = get_key_pair()
@@ -100,6 +106,11 @@ def register(show_spinner=False) -> str | None:
 
   if dongle_id:
     params.put("DongleId", dongle_id, block=True)
+    if dongle_id != UNREGISTERED_DONGLE_ID and registered_host != API_HOST:
+      try:
+        host_file.write_text(API_HOST)
+      except OSError:
+        cloudlog.exception("rbpilot: could not record registered host")
     set_offroad_alert("Offroad_UnregisteredHardware", (dongle_id == UNREGISTERED_DONGLE_ID) and not PC)
   return dongle_id
 
