@@ -3,8 +3,9 @@ import numpy as np
 from collections import deque
 
 from openpilot.cereal import log
+from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
-from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
+from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY, CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
@@ -48,6 +49,8 @@ class LatControlTorque(LatControl):
     self.lookahead_frames = int(JERK_LOOKAHEAD_SECONDS / self.dt)
     self.jerk_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
 
+    self.hkg_canfd_torque = bool(CP.brand == 'hyundai' and CP.flags & HyundaiFlags.CANFD)
+
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
 
   def update_torque_parameters(self, latAccelFactor, latAccelOffset, friction):
@@ -55,6 +58,16 @@ class LatControlTorque(LatControl):
     self.torque_params.latAccelOffset = latAccelOffset
     self.torque_params.friction = friction
     self.update_limits()
+
+  def friction(self, error, deadzone, threshold, CS, setpoint):
+    # rbpilot: StarPilot's HKG CAN-FD highway calming. Above ~50 mph, near straight, widen the friction
+    # threshold and add a small error deadband so the wheel doesn't make tiny nervous corrections.
+    if self.hkg_canfd_torque and not CS.steeringPressed:
+      weight = np.interp(CS.vEgo, [50 * CV.MPH_TO_MS, 65 * CV.MPH_TO_MS], [0.0, 1.0])
+      weight *= np.interp(abs(setpoint), [0.25, 0.65], [1.0, 0.0])
+      threshold += max(np.interp(CS.vEgo, [65 * CV.MPH_TO_MS, 75 * CV.MPH_TO_MS], [0.65, 0.78]) - threshold, 0.0) * weight
+      error = math.copysign(max(abs(error) - 0.04 * weight, 0.0), error)
+    return get_friction(error, deadzone, threshold, self.torque_params)
 
   def update_limits(self):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
@@ -88,7 +101,7 @@ class LatControlTorque(LatControl):
     ff = gravity_adjusted_future_lateral_accel
     # latAccelOffset corrects roll compensation bias from device roll misalignment relative to car roll
     ff -= self.torque_params.latAccelOffset
-    ff += get_friction(error + JERK_GAIN * desired_lateral_jerk, lateral_accel_deadzone, FRICTION_THRESHOLD, self.torque_params)
+    ff += self.friction(error + JERK_GAIN * desired_lateral_jerk, lateral_accel_deadzone, FRICTION_THRESHOLD, CS, setpoint)
 
     if not active:
       output_torque = 0.0
