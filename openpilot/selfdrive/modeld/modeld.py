@@ -42,6 +42,7 @@ from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_drivi
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import MODELS_DIR, chestnut_present, chestnut_compiled, modeld_pkl_path, load_oob, wait_for_chestnut
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
+from openpilot.sunnypilot.modeld_v2.camera_offset_helper import CameraOffsetHelper
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.relc import RoadEdgeLaneChangeController
 
@@ -341,6 +342,10 @@ def main(demo=False):
   DH = DesireHelper()
   RELC = RoadEdgeLaneChangeController()
 
+  # rbpilot: sunnypilot's CameraOffset (normally Model Manager models only) for the default model too
+  camera_offset_helper = CameraOffsetHelper()
+  camera_offset_helper.set_offset(params.get("CameraOffset", return_default=True))
+
   while True:
     # Keep receiving frames until we are at least 1 frame ahead of previous extra frame
     while meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
@@ -381,6 +386,8 @@ def main(demo=False):
     v_ego = max(sm["carState"].vEgo, 0.)
     model.lat_delay = get_lat_delay(params, sm["lateralDelay"].lateralDelay)
     lat_delay = sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    if sm.frame % 60 == 0:
+      camera_offset_helper.set_offset(params.get("CameraOffset", return_default=True))
     if sm.updated["extrinsicsCalibration"] and sm.seen['narrowRoadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["extrinsicsCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['narrowRoadCameraState'].sensor))]
@@ -389,6 +396,16 @@ def main(demo=False):
       has_wide_camera = use_extra_client or main_wide_camera
       extra_intrinsics = dc.wide_road.intrinsics if has_wide_camera else dc.narrow_road.intrinsics
       model_transform_extra = get_warp_matrix(device_from_calib_euler, extra_intrinsics, True).astype(np.float32)
+      # rbpilot: shear both inputs by the (smoothed) camera offset, same math as modeld_v2
+      helper = camera_offset_helper
+      helper.actual_camera_offset = 0.9 * helper.actual_camera_offset + 0.1 * helper.camera_offset
+      if helper.actual_camera_offset != 0.0:
+        calib = sm["extrinsicsCalibration"]
+        height = calib.height[0] if len(calib.height) else 1.22
+        model_transform_main = helper.apply_camera_offset(model_transform_main, height, helper.actual_camera_offset,
+                                                          helper.get_v_horizon(main_intrinsics, calib.rpyCalib))
+        model_transform_extra = helper.apply_camera_offset(model_transform_extra, height, helper.actual_camera_offset,
+                                                           helper.get_v_horizon(extra_intrinsics, calib.rpyCalib))
       extrinsics_calibration_seen = True
 
     traffic_convention = np.zeros(2)
